@@ -1,67 +1,87 @@
-# Recipe: Paddle Billing -> Superwall custom store
+# Paddle Billing as a Superwall custom store
 
-A reference forwarder that receives [Paddle Billing](https://developer.paddle.com) webhooks,
-verifies them and reports each subscription change to a Superwall custom store with
-`POST /v2/custom-stores/:custom_store_id/events`. It is also the store's **checkout endpoint**:
-when a paywall sells one of the store's products, Superwall asks it for a Paddle checkout, opens
-it, and grants access once the webhooks report the purchase, so the app needs no
-PurchaseController code. Node 22.18+ runs it as is; it has no dependencies. Copy it into your own
-backend rather than deploying it unchanged.
+A reference integration that sells [Paddle Billing](https://developer.paddle.com) subscriptions on
+[Superwall](https://superwall.com) paywalls. It's one small Node server, with no dependencies, that:
 
-- `signature.ts`: webhook signature check (`Paddle-Signature`).
-- `mapping.ts`: Paddle notification -> custom store event. Pure, no I/O.
-- `checkout.ts`: the signed `checkout.create` request and the payment link page. Pure, no I/O.
-- `paddle-api.ts`: the Paddle API calls it makes (reading a refund's transaction and
-  subscription or a renewed subscription, canceling a refunded subscription, creating a checkout
-  transaction), and the environment check.
-- `server.ts`: the HTTP forwarder, on port 8788.
-- `*.test.ts`: `node --test 'scripts/custom-store/recipes/paddle/*.test.ts'`.
+- receives Paddle's webhooks, verifies them and reports each purchase, renewal, cancellation and
+  refund to a Superwall [custom store](https://superwall.com/docs/integrations/custom-stores)
+  (`POST /v2/custom-stores/:custom_store_id/events`), so Superwall grants and revokes the user's
+  entitlements and counts the revenue;
+- creates Paddle checkouts for your paywalls, either as the store's **checkout endpoint** (Superwall
+  asks it for a checkout, so the app needs no purchase code) or for your app's
+  **PurchaseController** (`POST /paddle/app-checkout`);
+- serves the page Paddle's default payment link points at, which opens the checkout and sends the
+  buyer back to the app.
+
+The step-by-step guide is [Paddle](https://superwall.com/docs/integrations/custom-stores/paddle) in
+the Superwall docs. This README is the reference for the code. Copy it into your own backend, or
+run it as its own service.
+
+| File            | What it does                                                                                     |
+| --------------- | ------------------------------------------------------------------------------------------------ |
+| `server.ts`     | The HTTP server, on port 8788.                                                                   |
+| `mapping.ts`    | Paddle notification -> custom store event. Pure, no I/O.                                         |
+| `signature.ts`  | Paddle webhook signature check (`Paddle-Signature`).                                             |
+| `checkout.ts`   | The signed `checkout.create` request and the payment link page. Pure, no I/O.                    |
+| `paddle-api.ts` | The Paddle API calls: reading a refund's transaction and subscription, reading a renewed         |
+|                 | subscription, canceling a refunded subscription, creating a checkout transaction.                |
+| `app-auth.ts`   | Who is buying, for `POST /paddle/app-checkout`. **Implement it** before you use that route.      |
+| `*.test.ts`     | `npm test` (Node's test runner); `npm run typecheck` after `npm install`.                        |
+| `ios-demo/`     | A SwiftUI app that buys through the checkout endpoint (needs an upcoming iOS SDK release).        |
+
+Requires Node 22.18 or later, which runs the TypeScript files as is.
 
 ## Setup
 
-1. **Create a custom store** in your project (dashboard, or `POST /v2/projects/:id/custom-stores`).
+1. **Create a custom store** in your Superwall project (dashboard: Integrations > Custom stores,
+   or `POST /v2/projects/:id/custom-stores`).
 2. **Add a product per Paddle price** to the store (`POST /v2/products` with `store: "custom"`,
    `application_id` = the store id) and attach it to an entitlement. Put the Paddle price id ->
    Superwall product identifier pairs in `PADDLE_PRODUCTS`: `{"pri_01...": "pro_monthly"}`.
    Prices, not products, are what Paddle sells: a Paddle product holds several prices (monthly,
    yearly, trial or not), each its own Superwall product, and every transaction and subscription
-   item names its `price.id`. The checkout endpoint sells the first price listed for a product.
-3. **Create a Superwall API key** with the `custom_store_events:write` scope, and a Paddle API key
-   (`PADDLE_API_KEY`) with `transaction.read`, `transaction.write`, `subscription.read` and
-   `subscription.write`: a refund ends the subscription, so the forwarder cancels it in Paddle.
-4. **Create a client-side token** (Paddle > My account > Settings > Authentication) for the payment
+   item names its `price.id`. A checkout sells the first price listed for a product.
+3. **Create a Superwall API key** with the `custom_store_events:write` scope
+   (`SUPERWALL_API_KEY`), and a Paddle API key (`PADDLE_API_KEY`) with `transaction.read`,
+   `transaction.write`, `subscription.read` and `subscription.write`: a refund ends the
+   subscription, so the server cancels it in Paddle.
+4. **Create a client-side token** (Paddle > My account > Settings > Authentication, or `POST /client-tokens`) for the payment
    page (`PADDLE_CLIENT_TOKEN`).
-5. **Set the store's checkout endpoint** to `https://<forwarder host>/paddle/checkout`
-   (dashboard: the custom store's Checkout section, or
-   `PUT /v2/projects/:id/custom-stores/:custom_store_id/checkout-endpoint` with `{"url": ...}`).
-   Superwall shows the signing secret (`whsec_...`) once: it is `SUPERWALL_CHECKOUT_SECRET`. The
-   forwarder refuses to start when it is not a `whsec_` secret.
-   Superwall's request carries the buyer's `app_user_id` and the purchase's
-   `custom_transaction_id`; the forwarder puts them in the transaction's `custom_data`
-   (`superwall_app_user_id`, `superwall_custom_transaction_id`). Paddle copies a transaction's
-   `custom_data` to the subscription it creates and from it to every renewal, so the events grant
-   access to the right user and attribute the revenue, renewals included, to the paywall that sold
-   it.
-6. **Set the default payment link** to the forwarder's pay page, `https://<forwarder host>/paddle/pay`:
+5. **Set the default payment link** to the server's pay page, `https://<server host>/paddle/pay`:
    Paddle > Checkout > Checkout configuration, under **Default payment link**. Live accounts need
    the domain approved first (Paddle > My account > Settings > Website approval); sandbox does not.
-   Paddle refuses `localhost`, so expose a local forwarder through a tunnel.
-7. **Add a notification destination** pointing at the forwarder (`/paddle/webhooks`), subscribed
+   Paddle refuses `localhost`, so expose a local server through a tunnel.
+6. **Add a notification destination** pointing at the server (`/paddle/webhooks`), subscribed
    to `transaction.completed`, `subscription.created`, `subscription.updated`,
    `subscription.past_due`, `subscription.canceled`, `subscription.paused`, `adjustment.created`
    and `adjustment.updated`. Its secret key is `PADDLE_WEBHOOK_SECRET`.
+7. **Choose how the app opens the checkout**:
+   - **Checkout endpoint** (no purchase code in the app; needs an upcoming iOS SDK release): set
+     the store's checkout endpoint to `https://<server host>/paddle/checkout` (dashboard: the
+     custom store's Checkout section, or
+     `PUT /v2/projects/:id/custom-stores/:custom_store_id/checkout-endpoint` with `{"url": ...}`).
+     Superwall shows the signing secret (`whsec_...`) once: it is `SUPERWALL_CHECKOUT_SECRET`.
+     See [Checkout endpoint](#checkout-endpoint).
+   - **PurchaseController** (works with every SDK version that supports custom store products):
+     implement `authenticateAppUser` in `app-auth.ts` and set `APP_RETURN_URL` to a URL that opens
+     your app, such as `myapp://paddle-checkout`. See [App checkout](#app-checkout-purchasecontroller).
 8. Run it:
 
 ```bash
 PADDLE_API_KEY=pdl_sdbx_apikey_... PADDLE_CLIENT_TOKEN=test_... \
 PADDLE_WEBHOOK_SECRET=pdl_ntfset_... PADDLE_PRODUCTS='{"pri_01...":"pro_monthly"}' \
-SUPERWALL_API_KEY=sk_... SUPERWALL_CUSTOM_STORE_ID=4821 SUPERWALL_CHECKOUT_SECRET=whsec_... \
-node scripts/custom-store/recipes/paddle/server.ts   # listens on :8788
+SUPERWALL_API_KEY=sk_... SUPERWALL_CUSTOM_STORE_ID=4821 \
+SUPERWALL_CHECKOUT_SECRET=whsec_... APP_RETURN_URL=myapp://paddle-checkout \
+npm start   # listens on :8788
 ```
+
+Both checkout settings are optional, and both can be set. Without `SUPERWALL_CHECKOUT_SECRET`,
+`POST /paddle/checkout` answers 404; a `SUPERWALL_CHECKOUT_SECRET` that is not a `whsec_` secret
+stops the server at startup.
 
 **The environment comes from the keys.** A sandbox API key (`pdl_sdbx_...`) and client token
 (`test_...`) select `https://sandbox-api.paddle.com`, open Paddle.js in sandbox and send
-`environment: "sandbox"`; live ones (`pdl_live_...`, `live_...`) select production. The forwarder
+`environment: "sandbox"`; live ones (`pdl_live_...`, `live_...`) select production. The server
 refuses to start when the two disagree, so sandbox purchases can never be reported as production.
 Sandbox events show in revenue charts only when filtered to Sandbox and never set the store's
 `reporting_since`.
@@ -74,7 +94,31 @@ Paddle; `SUPERWALL_API_KEY` and `SUPERWALL_CUSTOM_STORE_ID` are then optional. A
 reads its transaction and subscription from the Paddle API; if that fails, a dry run logs the
 failure and maps without them (so the refund is ignored).
 
-## Checkout
+## App checkout (PurchaseController)
+
+An app that sells custom store products with a `PurchaseController` starts the checkout itself:
+
+1. In `purchase(product:)`, the app calls `POST /paddle/app-checkout` with its own credential and
+   `{"product_id": "pro_monthly"}`, plus `"custom_transaction_id"` when the SDK exposes
+   `StoreProduct.customTransactionId` (it links the revenue to the paywall).
+2. The server authenticates the user with `authenticateAppUser` (`app-auth.ts`), creates a Paddle
+   transaction for the product's price with `custom_data: {superwall_app_user_id, ...}`, and
+   answers `{"url": "<checkout.url>", "transaction_id": "txn_..."}`.
+3. The app opens `url` in an `ASWebAuthenticationSession` (or a Custom Tab on Android). The pay
+   page opens Paddle's overlay; on `checkout.completed` it goes to
+   `APP_RETURN_URL?status=completed&transaction_id=txn_...`, on `checkout.closed` to
+   `...?status=closed&...`, which ends the session.
+4. The webhooks report the purchase to Superwall as usual. The app sets
+   `Superwall.shared.subscriptionStatus` from its own record of the user's access (a
+   `PurchaseController` owns the status).
+
+`authenticateAppUser` must return the id your app passes to `Superwall.shared.identify(userId:)`,
+from a credential your server verifies. The user id is never read from the request body: anyone
+could then buy access for another user. Until you implement it the route answers 501; a request
+without a valid credential gets 401, an unknown product 404, a bad body 400, and a Paddle failure
+502.
+
+## Checkout endpoint
 
 When a paywall sells one of the store's products, Superwall POSTs a `checkout.create` to the
 checkout endpoint and opens the URL it answers with in the paywall's checkout destination (Safari

@@ -1,4 +1,4 @@
-// node --test 'scripts/custom-store/recipes/paddle/*.test.ts'
+// npm test
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { describe, it } from "node:test"
@@ -727,24 +727,37 @@ describe("checkout helpers", () => {
 
   it("signs the return links into the pay page URL and reads back only its own", () => {
     const links = { completed: request.success_url, closed: request.cancel_url }
-    const url = new URL(withReturnLinks("https://f.example.com/paddle/pay?_ptxn=txn_1", links, SECRET))
+    const url = new URL(
+      withReturnLinks("https://f.example.com/paddle/pay?_ptxn=txn_1", links, SECRET)
+    )
     assert.equal(url.searchParams.get("_ptxn"), "txn_1")
     assert.deepEqual(readReturnLinks(url.searchParams, SECRET), links)
-    url.searchParams.set("sw_return", Buffer.from('{"completed":"https://evil","closed":"x"}').toString("base64url"))
+    url.searchParams.set(
+      "sw_return",
+      Buffer.from('{"completed":"https://evil","closed":"x"}').toString("base64url")
+    )
     assert.equal(readReturnLinks(url.searchParams, SECRET), undefined)
     assert.equal(readReturnLinks(new URLSearchParams("_ptxn=txn_1"), SECRET), undefined)
   })
 
   it("does not accept one transaction's return links on another's pay page", () => {
     const links = { completed: request.success_url, closed: request.cancel_url }
-    const url = new URL(withReturnLinks("https://f.example.com/paddle/pay?_ptxn=txn_1", links, SECRET))
+    const url = new URL(
+      withReturnLinks("https://f.example.com/paddle/pay?_ptxn=txn_1", links, SECRET)
+    )
     url.searchParams.set("_ptxn", "txn_2")
     assert.equal(readReturnLinks(url.searchParams, SECRET), undefined)
   })
 
   it("accepts only a whsec_ secret with a key", () => {
     assert.equal(checkoutSecretKey(SECRET).length, 24)
-    for (const bad of ["", "whsec_", "MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw", "whsec_not base64!", "whsec_c2hvcnQ="]) {
+    for (const bad of [
+      "",
+      "whsec_",
+      "MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw",
+      "whsec_not base64!",
+      "whsec_c2hvcnQ=",
+    ]) {
       assert.throws(() => checkoutSecretKey(bad), /SUPERWALL_CHECKOUT_SECRET/)
     }
   })

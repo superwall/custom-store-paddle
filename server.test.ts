@@ -1,4 +1,4 @@
-// node --test 'scripts/custom-store/recipes/paddle/*.test.ts'
+// npm test
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { createServer, type Server } from "node:http"
@@ -96,6 +96,8 @@ const startForwarder = async (overrides: Partial<ForwarderConfig>) => {
     products: { [PRICE]: "pro_monthly" },
     superwall: { apiKey: "sk_test", storeId: "4821", apiUrl: fakeUrl },
     checkoutSecret: CHECKOUT_SECRET,
+    appReturnUrl: undefined,
+    authenticateAppUser: async () => undefined,
     dryRun: false,
     webhookBudgetMs: 4_000,
     log: (line) => logs.push(line),
@@ -162,6 +164,27 @@ describe("environment", () => {
     assert.throws(
       () => configFromEnv({ ...env, SUPERWALL_CHECKOUT_SECRET: "sk_not_a_whsec" }),
       /SUPERWALL_CHECKOUT_SECRET/
+    )
+  })
+
+  it("runs without a checkout endpoint, and refuses an APP_RETURN_URL that is not a URL", () => {
+    const env = {
+      PADDLE_API_KEY: "pdl_sdbx_apikey_x",
+      PADDLE_CLIENT_TOKEN: "test_x",
+      PADDLE_WEBHOOK_SECRET: "pdl_ntfset_x",
+      PADDLE_PRODUCTS: "{}",
+      DRY_RUN: "1",
+    }
+    const config = configFromEnv(env)
+    assert.equal(config.checkoutSecret, undefined)
+    assert.equal(config.appReturnUrl, undefined)
+    assert.equal(
+      configFromEnv({ ...env, APP_RETURN_URL: "myapp://paddle-checkout" }).appReturnUrl,
+      "myapp://paddle-checkout"
+    )
+    assert.throws(
+      () => configFromEnv({ ...env, APP_RETURN_URL: "paddle-checkout" }),
+      /APP_RETURN_URL/
     )
   })
 
@@ -294,7 +317,8 @@ describe("webhooks", () => {
   })
 })
 
-const RETURN = "https://subscriptions-api.superwall.com/subscriptions-api/public/v1/checkout/custom-store/return?checkout=v1%3Ak%3Ax"
+const RETURN =
+  "https://subscriptions-api.superwall.com/subscriptions-api/public/v1/checkout/custom-store/return?checkout=v1%3Ak%3Ax"
 const checkoutCreate = (overrides: Record<string, unknown> = {}) => ({
   type: "checkout.create",
   custom_store_id: "4821",
@@ -307,7 +331,11 @@ const checkoutCreate = (overrides: Record<string, unknown> = {}) => ({
 })
 
 /** A `checkout.create` signed the way Superwall signs it (Standard Webhooks). */
-const postCheckout = (url: string, body: string, options: { secret?: string; timestamp?: number } = {}) => {
+const postCheckout = (
+  url: string,
+  body: string,
+  options: { secret?: string; timestamp?: number } = {}
+) => {
   const id = "msg_test"
   const timestamp = options.timestamp ?? Math.floor(Date.now() / 1000)
   const key = Buffer.from((options.secret ?? CHECKOUT_SECRET).slice("whsec_".length), "base64")
@@ -331,7 +359,10 @@ describe("checkout", () => {
     assert.equal(response.status, 200)
     const { url } = (await response.json()) as { url: string }
     const checkout = new URL(url)
-    assert.equal(`${checkout.origin}${checkout.pathname}`, "https://forwarder.example.com/paddle/pay")
+    assert.equal(
+      `${checkout.origin}${checkout.pathname}`,
+      "https://forwarder.example.com/paddle/pay"
+    )
     assert.equal(checkout.searchParams.get("_ptxn"), "txn_01k6new0000000000000000000")
     assert.ok(checkout.searchParams.get("sw_return"))
     assert.ok(checkout.searchParams.get("sw_sig"))
@@ -347,9 +378,7 @@ describe("checkout", () => {
     })
 
     // The pay page sends the buyer to exactly those return links.
-    const page = await (
-      await fetch(`${forwarder.url}/paddle/pay${checkout.search}`)
-    ).text()
+    const page = await (await fetch(`${forwarder.url}/paddle/pay${checkout.search}`)).text()
     const config = JSON.parse(/const config = (.*);\n/.exec(page)![1]!)
     assert.equal(config.completedUrl, `${RETURN}&status=completed`)
     assert.equal(config.closedUrl, `${RETURN}&status=closed`)
@@ -374,7 +403,10 @@ describe("checkout", () => {
     const post = (body: string) => postCheckout(forwarder.url, body)
     assert.equal((await post(JSON.stringify(checkoutCreate({ product_id: "nope" })))).status, 404)
     assert.equal((await post("{")).status, 400)
-    assert.equal((await post(JSON.stringify(checkoutCreate({ type: "checkout.other" })))).status, 400)
+    assert.equal(
+      (await post(JSON.stringify(checkoutCreate({ type: "checkout.other" })))).status,
+      400
+    )
     assert.equal((await post(JSON.stringify(checkoutCreate({ success_url: "nope" })))).status, 400)
     const placeholder = await post(JSON.stringify(checkoutCreate({ app_user_id: "null" })))
     assert.equal(placeholder.status, 400)
@@ -401,6 +433,123 @@ describe("checkout", () => {
     assert.equal((await fetch(`${forwarder.url}/paddle/pay?_ptxn=%3Cscript%3E`)).status, 400)
     assert.equal((await fetch(`${forwarder.url}/health`)).status, 200)
     assert.equal((await fetch(`${forwarder.url}/nope`)).status, 404)
+    forwarder.close()
+  })
+})
+
+describe("app checkout (PurchaseController)", () => {
+  const postAppCheckout = (url: string, body: unknown, token = "good") =>
+    fetch(`${url}/paddle/app-checkout`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: typeof body === "string" ? body : JSON.stringify(body),
+    })
+  // Stands in for your app's authentication: one valid token, for one user.
+  const authenticateAppUser: ForwarderConfig["authenticateAppUser"] = async (request) =>
+    request.headers.authorization === "Bearer good" ? "user_8812" : undefined
+
+  it("is off until authenticateAppUser is implemented", async () => {
+    const forwarder = await startForwarder({
+      authenticateAppUser: configFromEnv({
+        PADDLE_API_KEY: "pdl_sdbx_apikey_x",
+        PADDLE_CLIENT_TOKEN: "test_x",
+        PADDLE_WEBHOOK_SECRET: "pdl_ntfset_x",
+        PADDLE_PRODUCTS: "{}",
+        DRY_RUN: "1",
+      }).authenticateAppUser,
+    })
+    const response = await postAppCheckout(forwarder.url, { product_id: "pro_monthly" })
+    assert.equal(response.status, 501)
+    assert.match(((await response.json()) as { error: string }).error, /app-auth\.ts/)
+    assert.equal(upstream.length, 0)
+    forwarder.close()
+  })
+
+  it("creates a checkout for the authenticated user, never a user id from the body", async () => {
+    const forwarder = await startForwarder({ authenticateAppUser })
+    const response = await postAppCheckout(forwarder.url, {
+      product_id: "pro_monthly",
+      app_user_id: "someone_else",
+    })
+    assert.equal(response.status, 200)
+    assert.deepEqual(await response.json(), {
+      url: CHECKOUT_URL,
+      transaction_id: "txn_01k6new0000000000000000000",
+    })
+    assert.deepEqual(upstream[0]?.body, {
+      items: [{ price_id: PRICE, quantity: 1 }],
+      collection_mode: "automatic",
+      custom_data: { superwall_app_user_id: "user_8812" },
+    })
+    forwarder.close()
+  })
+
+  it("passes a custom_transaction_id on for paywall attribution", async () => {
+    const forwarder = await startForwarder({ authenticateAppUser })
+    const response = await postAppCheckout(forwarder.url, {
+      product_id: "pro_monthly",
+      custom_transaction_id: "9f2c1d3e-4b5a-4c6d-8e7f-0a1b2c3d4e5f",
+    })
+    assert.equal(response.status, 200)
+    assert.deepEqual((upstream[0]?.body as { custom_data: unknown }).custom_data, {
+      superwall_app_user_id: "user_8812",
+      superwall_custom_transaction_id: "9f2c1d3e-4b5a-4c6d-8e7f-0a1b2c3d4e5f",
+    })
+    forwarder.close()
+  })
+
+  it("refuses signed-out users, unknown products and bad bodies before calling Paddle", async () => {
+    const forwarder = await startForwarder({ authenticateAppUser })
+    assert.equal(
+      (await postAppCheckout(forwarder.url, { product_id: "pro_monthly" }, "bad")).status,
+      401
+    )
+    assert.equal((await postAppCheckout(forwarder.url, { product_id: "nope" })).status, 404)
+    assert.equal((await postAppCheckout(forwarder.url, "{")).status, 400)
+    assert.equal((await postAppCheckout(forwarder.url, { product_id: " pro_monthly" })).status, 400)
+    assert.equal(
+      (
+        await postAppCheckout(forwarder.url, {
+          product_id: "pro_monthly",
+          custom_transaction_id: "null",
+        })
+      ).status,
+      400
+    )
+    assert.equal(upstream.length, 0)
+    forwarder.close()
+  })
+
+  it("sends the buyer back to APP_RETURN_URL, but prefers Superwall's signed links", async () => {
+    const forwarder = await startForwarder({ appReturnUrl: "myapp://paddle-checkout" })
+    const html = await (await fetch(`${forwarder.url}/paddle/pay?_ptxn=txn_x`)).text()
+    const config = JSON.parse(/const config = (.*);\n/.exec(html)![1]!)
+    assert.equal(
+      config.completedUrl,
+      "myapp://paddle-checkout?status=completed&transaction_id=txn_x"
+    )
+    assert.equal(config.closedUrl, "myapp://paddle-checkout?status=closed&transaction_id=txn_x")
+
+    const checkout = (await (
+      await postCheckout(forwarder.url, JSON.stringify(checkoutCreate()))
+    ).json()) as {
+      url: string
+    }
+    const signed = await (
+      await fetch(`${forwarder.url}/paddle/pay${new URL(checkout.url).search}`)
+    ).text()
+    assert.equal(
+      JSON.parse(/const config = (.*);\n/.exec(signed)![1]!).completedUrl,
+      `${RETURN}&status=completed`
+    )
+    forwarder.close()
+  })
+
+  it("answers 404 on the checkout endpoint when the store has none", async () => {
+    const forwarder = await startForwarder({ checkoutSecret: undefined })
+    const response = await postCheckout(forwarder.url, JSON.stringify(checkoutCreate()))
+    assert.equal(response.status, 404)
+    assert.equal(upstream.length, 0)
     forwarder.close()
   })
 })

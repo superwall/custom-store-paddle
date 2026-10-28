@@ -29,11 +29,7 @@ final class DemoStore {
 
   /// Configures Superwall, with no purchase controller. Call once, at launch.
   func configureSuperwall() {
-    let options = SuperwallOptions()
-    if config.usesLocalNetwork {
-      options.networkEnvironment = .local
-    }
-    Superwall.configure(apiKey: config.superwallAPIKey, options: options)
+    Superwall.configure(apiKey: config.superwallAPIKey)
     let proxy = DelegateProxy(store: self)
     delegateProxy = proxy
     Superwall.shared.delegate = proxy

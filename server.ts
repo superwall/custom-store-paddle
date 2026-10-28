@@ -11,7 +11,9 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { AppAuthNotConfigured, authenticateAppUser, type AuthenticateAppUser } from "./app-auth.ts"
 import {
+  appReturnLinks,
   CheckoutVerificationError,
   checkoutSecretKey,
   parseCheckoutRequest,
@@ -23,6 +25,7 @@ import {
   withReturnLinks,
 } from "./checkout.ts"
 import {
+  identifierProblem,
   mapPaddleNotification,
   requiredLookup,
   type MappingContext,
@@ -60,13 +63,20 @@ export type ForwarderConfig = {
   readonly products: Readonly<Record<string, string>>
   /** Absent in dry run. */
   readonly superwall:
-    | { readonly apiKey: string; readonly storeId: string; readonly apiUrl: string }
-    | undefined
+    { readonly apiKey: string; readonly storeId: string; readonly apiUrl: string } | undefined
   /**
    * The custom store checkout endpoint's signing secret (`whsec_...`), shown when the endpoint
    * was set in Superwall. Verifies `checkout.create` requests and signs the pay page's links.
+   * Absent when the store has no checkout endpoint: `POST /paddle/checkout` then answers 404.
    */
-  readonly checkoutSecret: string
+  readonly checkoutSecret: string | undefined
+  /**
+   * Where the pay page sends a buyer whose checkout the app started (`POST /paddle/app-checkout`),
+   * e.g. `myapp://paddle-checkout`. Absent: the page just says the payment is done.
+   */
+  readonly appReturnUrl: string | undefined
+  /** Who is buying, for `POST /paddle/app-checkout`. See app-auth.ts. */
+  readonly authenticateAppUser: AuthenticateAppUser
   /** Log each mapped event instead of sending it, and never cancel in Paddle. */
   readonly dryRun: boolean
   readonly webhookBudgetMs: number
@@ -85,6 +95,14 @@ const storeIdFrom = (value: string): string => {
 const validCheckoutSecret = (secret: string): string => {
   checkoutSecretKey(secret)
   return secret
+}
+
+const validAppReturnUrl = (value: string): string => {
+  try {
+    return new URL(value).toString()
+  } catch {
+    throw new Error(`APP_RETURN_URL must be an absolute URL such as myapp://paddle-checkout`)
+  }
 }
 
 const required = (env: NodeJS.ProcessEnv, name: string): string => {
@@ -113,7 +131,11 @@ export const configFromEnv = (env: NodeJS.ProcessEnv): ForwarderConfig => {
           storeId: storeIdFrom(required(env, "SUPERWALL_CUSTOM_STORE_ID")),
           apiUrl: (env.SUPERWALL_API_URL ?? "https://api.superwall.com").replace(/\/+$/, ""),
         },
-    checkoutSecret: validCheckoutSecret(required(env, "SUPERWALL_CHECKOUT_SECRET")),
+    checkoutSecret: env.SUPERWALL_CHECKOUT_SECRET
+      ? validCheckoutSecret(env.SUPERWALL_CHECKOUT_SECRET)
+      : undefined,
+    appReturnUrl: env.APP_RETURN_URL ? validAppReturnUrl(env.APP_RETURN_URL) : undefined,
+    authenticateAppUser,
     dryRun,
     webhookBudgetMs: WEBHOOK_BUDGET_MS,
     log: (line) => console.log(line),
@@ -272,6 +294,7 @@ const handleWebhook = async (
 const handleCheckout = async (
   body: string,
   headers: IncomingMessage["headers"],
+  checkoutSecret: string,
   config: ForwarderConfig
 ): Promise<Reply> => {
   const header = (name: string) => {
@@ -286,7 +309,7 @@ const handleCheckout = async (
         timestamp: header("webhook-timestamp"),
         signature: header("webhook-signature"),
       },
-      config.checkoutSecret
+      checkoutSecret
     )
   } catch (error) {
     if (error instanceof CheckoutVerificationError) return json(401, { error: error.message })
@@ -322,12 +345,71 @@ const handleCheckout = async (
       url: withReturnLinks(
         url,
         { completed: input.success_url, closed: input.cancel_url },
-        config.checkoutSecret
+        checkoutSecret
       ),
     })
   } catch (error) {
     if (!(error instanceof PaddleApiError)) throw error
     config.log(`checkout for ${input.product_id}: ${error.message}`)
+    return json(502, { error: "Paddle could not create the transaction" })
+  }
+}
+
+/**
+ * For apps that sell with a PurchaseController: the app asks for a Paddle checkout for one of
+ * the store's products and opens the URL it gets back. The buyer is the authenticated app
+ * user (app-auth.ts), never an id from the body.
+ */
+const handleAppCheckout = async (request: IncomingMessage, config: ForwarderConfig) => {
+  let appUserId: string | undefined
+  try {
+    appUserId = await config.authenticateAppUser(request)
+  } catch (error) {
+    if (error instanceof AppAuthNotConfigured) return json(501, { error: error.message })
+    throw error
+  }
+  if (appUserId === undefined) return json(401, { error: "not signed in" })
+  const userProblem = identifierProblem("app_user_id", appUserId)
+  if (userProblem) {
+    config.log(`app checkout refused: authenticateAppUser returned an unusable id (${userProblem})`)
+    return json(400, { error: userProblem })
+  }
+  let fields: Record<string, unknown>
+  try {
+    const parsed: unknown = JSON.parse(await readBody(request))
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error()
+    fields = parsed as Record<string, unknown>
+  } catch {
+    return json(400, { error: "body must be a JSON object" })
+  }
+  const { product_id: productId, custom_transaction_id: customTransactionId } = fields
+  const problem =
+    identifierProblem("product_id", productId) ??
+    (customTransactionId === undefined
+      ? undefined
+      : identifierProblem("custom_transaction_id", customTransactionId))
+  if (problem) return json(400, { error: problem })
+  const priceId = priceIdFor(config.products, productId as string)
+  if (!priceId) return json(404, { error: `no Paddle price maps to ${productId}` })
+  try {
+    const transaction = await createCheckoutTransaction(
+      {
+        priceId,
+        appUserId,
+        customTransactionId: customTransactionId as string | undefined,
+      },
+      config.paddle
+    )
+    const url = transaction.checkout?.url
+    if (!url) {
+      config.log(`checkout ${transaction.id}: no checkout.url; set the default payment link`)
+      return json(502, { error: "Paddle returned no checkout URL" })
+    }
+    config.log(`app checkout ${transaction.id} for ${productId} (${priceId})`)
+    return json(200, { url, transaction_id: transaction.id })
+  } catch (error) {
+    if (!(error instanceof PaddleApiError)) throw error
+    config.log(`app checkout for ${productId}: ${error.message}`)
     return json(502, { error: "Paddle could not create the transaction" })
   }
 }
@@ -366,7 +448,12 @@ const route = async (request: IncomingMessage, config: ForwarderConfig): Promise
       )
     }
     case "POST /paddle/checkout":
-      return handleCheckout(await readBody(request), request.headers, config)
+      if (!config.checkoutSecret) {
+        return json(404, { error: "no checkout endpoint: set SUPERWALL_CHECKOUT_SECRET" })
+      }
+      return handleCheckout(await readBody(request), request.headers, config.checkoutSecret, config)
+    case "POST /paddle/app-checkout":
+      return handleAppCheckout(request, config)
     case "GET /paddle/pay": {
       const transactionId = url.searchParams.get("_ptxn") ?? ""
       if (!TRANSACTION_ID.test(transactionId)) return text(400, "missing or invalid _ptxn")
@@ -377,7 +464,12 @@ const route = async (request: IncomingMessage, config: ForwarderConfig): Promise
           clientToken: config.clientToken,
           environment: config.environment,
           transactionId,
-          returnLinks: readReturnLinks(url.searchParams, config.checkoutSecret),
+          // Superwall's signed links for a paywall checkout, else the app's own return URL.
+          returnLinks:
+            (config.checkoutSecret
+              ? readReturnLinks(url.searchParams, config.checkoutSecret)
+              : undefined) ??
+            (config.appReturnUrl ? appReturnLinks(config.appReturnUrl, transactionId) : undefined),
         }),
       }
     }

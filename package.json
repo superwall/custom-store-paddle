@@ -1,0 +1,19 @@
+{
+  "name": "superwall-custom-store-paddle",
+  "private": true,
+  "description": "Reference integration: Paddle Billing as a Superwall custom store",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "start": "node server.ts",
+    "test": "node --test '*.test.ts'",
+    "typecheck": "tsc"
+  },
+  "devDependencies": {
+    "@types/node": "^22.18.0",
+    "typescript": "^5.9.3"
+  }
+}

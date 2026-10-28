@@ -134,7 +134,10 @@ export const withReturnLinks = (checkoutUrl: string, links: ReturnLinks, secret:
   const url = new URL(checkoutUrl)
   const encoded = Buffer.from(JSON.stringify(links)).toString("base64url")
   url.searchParams.set("sw_return", encoded)
-  url.searchParams.set("sw_sig", linkSignature(url.searchParams.get("_ptxn") ?? "", encoded, secret))
+  url.searchParams.set(
+    "sw_sig",
+    linkSignature(url.searchParams.get("_ptxn") ?? "", encoded, secret)
+  )
   return url.toString()
 }
 
@@ -157,6 +160,22 @@ export const readReturnLinks = (
   } catch {
     return undefined
   }
+}
+
+/**
+ * Where the pay page sends a buyer whose checkout your app started (`POST /paddle/app-checkout`,
+ * for a PurchaseController): your app's `APP_RETURN_URL` with the outcome and transaction, for
+ * example `myapp://paddle-checkout?status=completed&transaction_id=txn_...`. It is your own
+ * configured URL, so it needs no signature.
+ */
+export const appReturnLinks = (appReturnUrl: string, transactionId: string): ReturnLinks => {
+  const link = (status: "completed" | "closed") => {
+    const url = new URL(appReturnUrl)
+    url.searchParams.set("status", status)
+    url.searchParams.set("transaction_id", transactionId)
+    return url.toString()
+  }
+  return { completed: link("completed"), closed: link("closed") }
 }
 
 /** A Paddle transaction id. Loose on purpose: only its characters matter for the page. */

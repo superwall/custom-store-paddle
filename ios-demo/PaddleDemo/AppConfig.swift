@@ -6,8 +6,6 @@ struct AppConfig: Sendable {
   let superwallAPIKey: String
   /// Placement registered by "Show paywall".
   let placement: String
-  /// Talk to a local Superwall stack instead of production (`SUPERWALL_NETWORK = local`).
-  let usesLocalNetwork: Bool
 
   static let current = AppConfig(bundle: .main)
 
@@ -19,7 +17,6 @@ struct AppConfig: Sendable {
     superwallAPIKey = value("SuperwallAPIKey")
     let placement = value("SuperwallPlacement")
     self.placement = placement.isEmpty ? "paddle_demo" : placement
-    usesLocalNetwork = value("SuperwallNetwork") == "local"
   }
 
   /// `true` while the build still uses the defaults from `Base.xcconfig`.

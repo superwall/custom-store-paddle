@@ -48,12 +48,5 @@
 	<string>$(SUPERWALL_API_KEY)</string>
 	<key>SuperwallPlacement</key>
 	<string>$(SUPERWALL_PLACEMENT)</string>
-	<key>SuperwallNetwork</key>
-	<string>$(SUPERWALL_NETWORK)</string>
-	<key>NSAppTransportSecurity</key>
-	<dict>
-		<key>NSAllowsLocalNetworking</key>
-		<true/>
-	</dict>
 </dict>
 </plist>

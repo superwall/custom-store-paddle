@@ -19,7 +19,7 @@ The home screen shows the user ID, the live subscription status, the user's enti
 - Xcode 26 or later, iOS 17+ simulator or device
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`)
 - The Superwall iOS SDK branch `feat/custom-store-sdk-checkout` (not released yet; stacked on [superwall/Superwall-iOS#552](https://github.com/superwall/Superwall-iOS/pull/552)). It runs the paywall's custom store checkout (the `custom_store_checkout` capability), and adds `refreshCustomerInfo()` and the post-purchase entitlement refresh.
-- The Paddle forwarder from `../` running behind a public tunnel
+- The Paddle forwarder from this repository's root, running behind a public tunnel
 
 ## Setup
 
@@ -27,7 +27,7 @@ The home screen shows the user ID, the live subscription status, the user's enti
 
 In the Superwall dashboard, for an iOS app:
 
-1. Create a **custom store** for Paddle and point the forwarder at it (see the forwarder README in `../`). In the store's **Checkout** section, set the checkout endpoint to `<tunnel URL>/paddle/checkout` and copy the signing secret into the forwarder's `SUPERWALL_CHECKOUT_SECRET`.
+1. Create a **custom store** for Paddle and point the forwarder at it (see the forwarder [README](../README.md)). In the store's **Checkout** section, set the checkout endpoint to `<tunnel URL>/paddle/checkout` and copy the signing secret into the forwarder's `SUPERWALL_CHECKOUT_SECRET`.
 2. Add a **product** on that store. Its identifier is the `product_id` Superwall sends to the forwarder, so the forwarder has to map it to a Paddle price.
 3. Attach an **entitlement** to the product (for example `pro`).
 4. Build a **paywall** that shows the product, and add it to a campaign with the placement **`paddle_demo`**. You can use a different name if you also set `SUPERWALL_PLACEMENT`.
@@ -78,19 +78,6 @@ SUPERWALL_SDK_PATH=/path/to/Superwall-iOS xcodegen generate --spec project.local
 
 `project.local.yml` includes `project.yml` and replaces only the package source. To go back to the remote branch, run `xcodegen generate`.
 
-### Against the local Superwall stack
-
-To demo without any deployed Superwall backend, run the stack from `scripts/custom-store/e2e-local`
-(`up.sh`, `seed.sh`, `legacy-sdk-api/run.sh seed` and `run.sh host`), point the seeded iOS app's
-`bundleId` at `com.superwall.demo.paddle` (otherwise the SDK opens Test Mode and skips the
-purchase), set the store's checkout endpoint to the forwarder (`http://localhost:8788/paddle/checkout`
-works: the local stack sets `CUSTOM_STORE_CHECKOUT_ALLOW_LOCAL_ENDPOINTS`), and build against a copy of the SDK patched with `e2e-local/ios/sdk-local-hosts.patch`.
-In `Config/Config.xcconfig` set `SUPERWALL_NETWORK = local`, `SUPERWALL_PLACEMENT = pro` and the
-seeded `pk_` key, then launch with the `SIMCTL_CHILD_SUPERWALL_LOCAL_*_HOST` variables listed in
-`e2e-local/ios/README.md`. Run the forwarder with `SUPERWALL_API_URL` set to the local API and the
-seeded store id, behind a tunnel that Paddle's notification destination and default payment link
-point at.
-
 ## Demo script
 
 1. **Sign in.** Keep the generated `demo-user-xxxx` ID or type your own. The app calls `Superwall.shared.identify(userId:)`, and the status changes from _Unknown_ to _Inactive_.
@@ -109,7 +96,7 @@ If you close the overlay, the return page reports it and the purchase is abandon
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
 | `PaddleDemo/DemoStore.swift`  | Configures Superwall (no purchase controller), the `SuperwallDelegate` event log, and the sign-in, refresh, restore and sign-out actions. |
 | `PaddleDemo/PaddleDemoApp.swift` | Passes opened URLs to `Superwall.handleDeepLink`, so the return page's `superwallpaddledemo://superwall/return` link reaches the SDK. |
-| `PaddleDemo/AppConfig.swift`  | Reads `SUPERWALL_API_KEY`, `SUPERWALL_PLACEMENT` and `SUPERWALL_NETWORK` from Info.plist. The values come from the xcconfig files.  |
+| `PaddleDemo/AppConfig.swift`  | Reads `SUPERWALL_API_KEY` and `SUPERWALL_PLACEMENT` from Info.plist. The values come from the xcconfig files.  |
 
 Notes on how the purchase flow uses the SDK:
 

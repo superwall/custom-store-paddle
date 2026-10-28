@@ -135,7 +135,8 @@ export const cancelSubscription = async (
 export type CheckoutInput = {
   readonly priceId: string
   readonly appUserId: string
-  readonly customTransactionId: string
+  /** The SDK's `StoreProduct.customTransactionId`, when the caller has it (paywall attribution). */
+  readonly customTransactionId?: string | undefined
 }
 
 /**
@@ -148,7 +149,9 @@ export const checkoutTransactionBody = (input: CheckoutInput) => ({
   collection_mode: "automatic",
   custom_data: {
     superwall_app_user_id: input.appUserId,
-    superwall_custom_transaction_id: input.customTransactionId,
+    ...(input.customTransactionId
+      ? { superwall_custom_transaction_id: input.customTransactionId }
+      : {}),
   },
 })
 
