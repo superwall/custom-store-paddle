@@ -1,0 +1,183 @@
+{
+  "event_id": "evt_01k6g2v9w4x1yq7e3h8s5n0m2a",
+  "event_type": "transaction.completed",
+  "occurred_at": "2026-10-01T10:00:06.155553Z",
+  "notification_id": "ntf_01k6g2v9y8b3c5d7f9h1k3m5n7",
+  "data": {
+    "id": "txn_01k6g2s4p6r8t0v2x4z6b8d0f2",
+    "items": [
+      {
+        "price": {
+          "id": "pri_01k5x1a2b3c4d5e6f7g8h9j0k1",
+          "name": "Monthly",
+          "type": "standard",
+          "status": "active",
+          "quantity": {
+            "maximum": 1,
+            "minimum": 1
+          },
+          "tax_mode": "account_setting",
+          "created_at": "2026-09-01T00:00:00.000000Z",
+          "product_id": "pro_01k5x0z9y8x7w6v5t4s3r2q1p0",
+          "unit_price": {
+            "amount": "999",
+            "currency_code": "USD"
+          },
+          "updated_at": "2026-09-01T00:00:00.000000Z",
+          "custom_data": null,
+          "description": "Pro Monthly",
+          "trial_period": null,
+          "billing_cycle": {
+            "interval": "month",
+            "frequency": 1
+          },
+          "unit_price_overrides": [],
+          "import_meta": null
+        },
+        "quantity": 1,
+        "proration": null
+      }
+    ],
+    "origin": "api",
+    "status": "completed",
+    "details": {
+      "totals": {
+        "fee": "100",
+        "tax": "200",
+        "total": "1199",
+        "credit": "0",
+        "balance": "0",
+        "discount": "0",
+        "earnings": "899",
+        "subtotal": "999",
+        "grand_total": "1199",
+        "grand_total_tax": "200",
+        "currency_code": "USD",
+        "credit_to_balance": "0"
+      },
+      "line_items": [
+        {
+          "id": "txnitm_01k6g2s4q1w3e5r7t9y1u3i5o7",
+          "totals": {
+            "tax": "200",
+            "total": "1199",
+            "discount": "0",
+            "subtotal": "999"
+          },
+          "product": {
+            "id": "pro_01k5x0z9y8x7w6v5t4s3r2q1p0",
+            "name": "Pro",
+            "type": "standard",
+            "status": "active",
+            "image_url": null,
+            "created_at": "2026-09-01T00:00:00.000Z",
+            "updated_at": "2026-09-01T00:00:00.000Z",
+            "custom_data": null,
+            "description": "Pro access in the app",
+            "tax_category": "standard",
+            "import_meta": null
+          },
+          "price_id": "pri_01k5x1a2b3c4d5e6f7g8h9j0k1",
+          "quantity": 1,
+          "tax_rate": "0.2",
+          "unit_totals": {
+            "tax": "200",
+            "total": "1199",
+            "discount": "0",
+            "subtotal": "999"
+          },
+          "proration": null
+        }
+      ],
+      "payout_totals": {
+        "fee": "100",
+        "tax": "200",
+        "total": "1199",
+        "credit": "0",
+        "balance": "0",
+        "discount": "0",
+        "earnings": "899",
+        "subtotal": "999",
+        "grand_total": "1199",
+        "grand_total_tax": "200",
+        "currency_code": "USD",
+        "credit_to_balance": "0",
+        "exchange_rate": "1",
+        "fee_rate": "0.05"
+      },
+      "tax_rates_used": [
+        {
+          "totals": {
+            "tax": "200",
+            "total": "1199",
+            "discount": "0",
+            "subtotal": "999"
+          },
+          "tax_rate": "0.2"
+        }
+      ],
+      "adjusted_totals": {
+        "fee": "100",
+        "tax": "200",
+        "total": "1199",
+        "earnings": "899",
+        "subtotal": "999",
+        "grand_total": "1199",
+        "grand_total_tax": "200",
+        "currency_code": "USD",
+        "retained_fee": "0"
+      },
+      "adjusted_payout_totals": null
+    },
+    "checkout": {
+      "url": "https://forwarder.example.com/paddle/pay?_ptxn=txn_01k6g2s4p6r8t0v2x4z6b8d0f2"
+    },
+    "payments": [
+      {
+        "amount": "1199",
+        "status": "captured",
+        "created_at": "2026-10-01T09:59:58.579142Z",
+        "error_code": null,
+        "captured_at": "2026-10-01T10:00:00.635628Z",
+        "method_details": {
+          "type": "card",
+          "underlying_details": null,
+          "south_korea_local_card": null,
+          "card": {
+            "type": "visa",
+            "last4": "4242",
+            "expiry_year": 2030,
+            "expiry_month": 1,
+            "cardholder_name": "Jane Buyer"
+          },
+          "paypal": null
+        },
+        "payment_method_id": "paymtd_01k6g2t1a3s5d7f9g1h3j5k7l9",
+        "payment_attempt_id": "937640dd-e3dc-40df-a16c-bb75aafd8f71",
+        "stored_payment_method_id": "281ff2ca-8550-42b9-bf39-15948e7de62d"
+      }
+    ],
+    "billed_at": "2026-10-01T10:00:01.294633Z",
+    "address_id": "add_01k6g2r0q2w4e6r8t0y2u4i6o8",
+    "created_at": "2026-10-01T09:58:33.2014Z",
+    "invoice_id": "inv_01k6g2v9a1s3d5f7g9h1j3k5l7",
+    "updated_at": "2026-10-01T10:00:05.738971238Z",
+    "revised_at": null,
+    "business_id": null,
+    "custom_data": {
+      "superwall_app_user_id": "user_8812",
+      "superwall_custom_transaction_id": "9f2c1d3e-4b5a-4c6d-8e7f-0a1b2c3d4e5f"
+    },
+    "customer_id": "ctm_01k6g2q8w0e2r4t6y8u0i2o4p6",
+    "discount_id": null,
+    "currency_code": "USD",
+    "billing_period": {
+      "ends_at": "2026-11-01T10:00:00.635628Z",
+      "starts_at": "2026-10-01T10:00:00.635628Z"
+    },
+    "invoice_number": "325-10566",
+    "billing_details": null,
+    "collection_mode": "automatic",
+    "subscription_id": "sub_01k6g2v9b2n4m6k8j0h2g4f6d8"
+  }
+}

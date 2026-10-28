@@ -1,0 +1,9 @@
+// Copy to Config/Config.xcconfig (gitignored) and fill in.
+//
+//   cp Config/Config.example.xcconfig Config/Config.xcconfig
+
+// Public SDK key of the Superwall app that owns the Paddle custom store (starts with pk_).
+SUPERWALL_API_KEY = pk_your_public_api_key
+
+// Placement whose campaign shows the Paddle paywall.
+SUPERWALL_PLACEMENT = paddle_demo

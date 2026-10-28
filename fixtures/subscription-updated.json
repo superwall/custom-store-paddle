@@ -1,0 +1,96 @@
+{
+  "event_id": "evt_01k6j7a1b3c5d7e9f1g3h5j7k9",
+  "event_type": "subscription.updated",
+  "occurred_at": "2026-10-10T08:00:01.056742Z",
+  "notification_id": "ntf_01k6j7a1d4f6h8j0k2m4n6p8q0",
+  "data": {
+    "id": "sub_01k6g2v9b2n4m6k8j0h2g4f6d8",
+    "items": [
+      {
+        "price": {
+          "id": "pri_01k5x1a2b3c4d5e6f7g8h9j0k1",
+          "name": "Monthly",
+          "type": "standard",
+          "status": "active",
+          "quantity": {
+            "maximum": 1,
+            "minimum": 1
+          },
+          "tax_mode": "account_setting",
+          "created_at": "2026-09-01T00:00:00.000000Z",
+          "product_id": "pro_01k5x0z9y8x7w6v5t4s3r2q1p0",
+          "unit_price": {
+            "amount": "999",
+            "currency_code": "USD"
+          },
+          "updated_at": "2026-09-01T00:00:00.000000Z",
+          "custom_data": null,
+          "description": "Pro Monthly",
+          "import_meta": null,
+          "trial_period": null,
+          "billing_cycle": {
+            "interval": "month",
+            "frequency": 1
+          },
+          "unit_price_overrides": []
+        },
+        "product": {
+          "id": "pro_01k5x0z9y8x7w6v5t4s3r2q1p0",
+          "name": "Pro",
+          "type": "standard",
+          "tax_category": "standard",
+          "description": "Pro access in the app",
+          "image_url": null,
+          "custom_data": null,
+          "status": "active",
+          "import_meta": null,
+          "created_at": "2026-09-01T00:00:00.000Z",
+          "updated_at": "2026-09-01T00:00:00.000Z"
+        },
+        "status": "active",
+        "quantity": 1,
+        "recurring": true,
+        "created_at": "2026-10-01T10:00:04.831Z",
+        "updated_at": "2026-10-01T10:00:04.831Z",
+        "trial_dates": null,
+        "next_billed_at": "2026-11-01T10:00:00.635628Z",
+        "previously_billed_at": "2026-10-01T10:00:00.635628Z"
+      }
+    ],
+    "status": "active",
+    "discount": null,
+    "paused_at": null,
+    "address_id": "add_01k6g2r0q2w4e6r8t0y2u4i6o8",
+    "created_at": "2026-10-01T10:00:04.831Z",
+    "started_at": "2026-10-01T10:00:00.635628Z",
+    "updated_at": "2026-10-10T08:00:00.761Z",
+    "business_id": null,
+    "canceled_at": null,
+    "custom_data": {
+      "superwall_app_user_id": "user_8812",
+      "superwall_custom_transaction_id": "9f2c1d3e-4b5a-4c6d-8e7f-0a1b2c3d4e5f"
+    },
+    "customer_id": "ctm_01k6g2q8w0e2r4t6y8u0i2o4p6",
+    "import_meta": null,
+    "billing_cycle": {
+      "interval": "month",
+      "frequency": 1
+    },
+    "currency_code": "USD",
+    "next_billed_at": null,
+    "transaction_id": "txn_01k6g2s4p6r8t0v2x4z6b8d0f2",
+    "billing_details": null,
+    "collection_mode": "automatic",
+    "first_billed_at": "2026-10-01T10:00:00.635628Z",
+    "scheduled_change": {
+      "action": "cancel",
+      "resume_at": null,
+      "effective_at": "2026-11-01T10:00:00.635628Z"
+    },
+    "consent_requirements": [],
+    "current_billing_period": {
+      "ends_at": "2026-11-01T10:00:00.635628Z",
+      "starts_at": "2026-10-01T10:00:00.635628Z"
+    }
+  }
+}

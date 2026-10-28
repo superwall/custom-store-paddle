@@ -1,0 +1,57 @@
+{
+  "event_id": "evt_01k6m3c5e7g9j1l3n5q7s9u1w3",
+  "event_type": "adjustment.updated",
+  "occurred_at": "2026-10-12T08:54:10.646377Z",
+  "notification_id": "ntf_01k6m3c5h8k0m2p4r6t8v0x2z4",
+  "data": {
+    "id": "adj_01k6m2z8a0c2e4g6j8l0n2q4s6",
+    "items": [
+      {
+        "id": "adjitm_01k6m2z8b1d3f5h7k9m1p3r5t7",
+        "type": "full",
+        "amount": "1199",
+        "totals": {
+          "tax": "200",
+          "total": "1199",
+          "subtotal": "999"
+        },
+        "item_id": "txnitm_01k6g2s4q1w3e5r7t9y1u3i5o7",
+        "proration": null
+      }
+    ],
+    "action": "refund",
+    "type": "full",
+    "reason": "customer requested refund",
+    "status": "approved",
+    "totals": {
+      "fee": "100",
+      "tax": "200",
+      "total": "1199",
+      "earnings": "899",
+      "subtotal": "999",
+      "currency_code": "USD",
+      "retained_fee": "0"
+    },
+    "created_at": "2026-10-12T08:48:20.239695Z",
+    "updated_at": "2026-10-12T08:54:10.646377Z",
+    "customer_id": "ctm_01k6g2q8w0e2r4t6y8u0i2o4p6",
+    "currency_code": "USD",
+    "payout_totals": {
+      "fee": "100",
+      "tax": "200",
+      "total": "1199",
+      "earnings": "899",
+      "subtotal": "999",
+      "currency_code": "USD",
+      "retained_fee": "0",
+      "chargeback_fee": {
+        "amount": "0",
+        "original": null
+      }
+    },
+    "transaction_id": "txn_01k6g2s4p6r8t0v2x4z6b8d0f2",
+    "subscription_id": "sub_01k6g2v9b2n4m6k8j0h2g4f6d8",
+    "credit_applied_to_balance": null,
+    "tax_rates_used": null
+  }
+}

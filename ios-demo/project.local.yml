@@ -1,0 +1,10 @@
+# Builds against a local Superwall-iOS checkout instead of the remote branch.
+#
+#   SUPERWALL_SDK_PATH=/path/to/Superwall-iOS xcodegen generate --spec project.local.yml
+#
+# Everything else comes from project.yml; this file only swaps the package source.
+include:
+  - project.yml
+packages:
+  SuperwallKit:
+    path: ${SUPERWALL_SDK_PATH}

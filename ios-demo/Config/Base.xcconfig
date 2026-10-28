@@ -1,0 +1,11 @@
+// Defaults that let the app build and launch without real credentials.
+// Put real values in Config/Config.xcconfig (gitignored), copied from
+// Config/Config.example.xcconfig. Values there override these.
+
+SUPERWALL_API_KEY = pk_replace_me
+SUPERWALL_PLACEMENT = paddle_demo
+// `local` talks to a Superwall stack on this Mac (scripts/custom-store/e2e-local), with an SDK
+// patched by e2e-local/ios/sdk-local-hosts.patch. Empty = production.
+SUPERWALL_NETWORK =
+
+#include? "Config.xcconfig"
