@@ -447,17 +447,26 @@ describe("app checkout (PurchaseController)", () => {
   // Stands in for your app's authentication: one valid token, for one user.
   const authenticateAppUser: ForwarderConfig["authenticateAppUser"] = async (request) =>
     request.headers.authorization === "Bearer good" ? "user_8812" : undefined
+  const APP = { authenticateAppUser, appReturnUrl: "myapp://paddle-checkout" }
+  const payPageConfig = async (forwarderUrl: string, checkoutUrl: string) => {
+    const html = await (
+      await fetch(`${forwarderUrl}/paddle/pay${new URL(checkoutUrl).search}`)
+    ).text()
+    return JSON.parse(/const config = (.*);\n/.exec(html)![1]!) as {
+      completedUrl: string | null
+      closedUrl: string | null
+    }
+  }
 
   it("is off until authenticateAppUser is implemented", async () => {
-    const forwarder = await startForwarder({
-      authenticateAppUser: configFromEnv({
-        PADDLE_API_KEY: "pdl_sdbx_apikey_x",
-        PADDLE_CLIENT_TOKEN: "test_x",
-        PADDLE_WEBHOOK_SECRET: "pdl_ntfset_x",
-        PADDLE_PRODUCTS: "{}",
-        DRY_RUN: "1",
-      }).authenticateAppUser,
+    const { authenticateAppUser: unimplemented } = configFromEnv({
+      PADDLE_API_KEY: "pdl_sdbx_apikey_x",
+      PADDLE_CLIENT_TOKEN: "test_x",
+      PADDLE_WEBHOOK_SECRET: "pdl_ntfset_x",
+      PADDLE_PRODUCTS: "{}",
+      DRY_RUN: "1",
     })
+    const forwarder = await startForwarder({ ...APP, authenticateAppUser: unimplemented })
     const response = await postAppCheckout(forwarder.url, { product_id: "pro_monthly" })
     assert.equal(response.status, 501)
     assert.match(((await response.json()) as { error: string }).error, /app-auth\.ts/)
@@ -465,17 +474,28 @@ describe("app checkout (PurchaseController)", () => {
     forwarder.close()
   })
 
-  it("creates a checkout for the authenticated user, never a user id from the body", async () => {
+  it("is off without APP_RETURN_URL, which brings the buyer back to the app", async () => {
     const forwarder = await startForwarder({ authenticateAppUser })
+    const response = await postAppCheckout(forwarder.url, { product_id: "pro_monthly" })
+    assert.equal(response.status, 501)
+    assert.match(((await response.json()) as { error: string }).error, /APP_RETURN_URL/)
+    assert.equal(upstream.length, 0)
+    forwarder.close()
+  })
+
+  it("creates a checkout for the authenticated user, never a user id from the body", async () => {
+    const forwarder = await startForwarder(APP)
     const response = await postAppCheckout(forwarder.url, {
       product_id: "pro_monthly",
       app_user_id: "someone_else",
     })
     assert.equal(response.status, 200)
-    assert.deepEqual(await response.json(), {
-      url: CHECKOUT_URL,
-      transaction_id: "txn_01k6new0000000000000000000",
-    })
+    const { url, transaction_id } = (await response.json()) as {
+      url: string
+      transaction_id: string
+    }
+    assert.equal(transaction_id, "txn_01k6new0000000000000000000")
+    assert.equal(new URL(url).searchParams.get("_ptxn"), transaction_id)
     assert.deepEqual(upstream[0]?.body, {
       items: [{ price_id: PRICE, quantity: 1 }],
       collection_mode: "automatic",
@@ -484,8 +504,27 @@ describe("app checkout (PurchaseController)", () => {
     forwarder.close()
   })
 
+  it("signs APP_RETURN_URL into the checkout URL, so the pay page returns to the app", async () => {
+    const forwarder = await startForwarder(APP)
+    const { url } = (await (
+      await postAppCheckout(forwarder.url, { product_id: "pro_monthly" })
+    ).json()) as { url: string }
+    const config = await payPageConfig(forwarder.url, url)
+    const txn = "txn_01k6new0000000000000000000"
+    assert.equal(
+      config.completedUrl,
+      `myapp://paddle-checkout?status=completed&transaction_id=${txn}`
+    )
+    assert.equal(config.closedUrl, `myapp://paddle-checkout?status=closed&transaction_id=${txn}`)
+
+    // A pay page Paddle opens on its own (a card update) carries no links and goes nowhere.
+    const unsigned = await payPageConfig(forwarder.url, `https://x.example.com/?_ptxn=${txn}`)
+    assert.equal(unsigned.completedUrl, null)
+    forwarder.close()
+  })
+
   it("passes a custom_transaction_id on for paywall attribution", async () => {
-    const forwarder = await startForwarder({ authenticateAppUser })
+    const forwarder = await startForwarder(APP)
     const response = await postAppCheckout(forwarder.url, {
       product_id: "pro_monthly",
       custom_transaction_id: "9f2c1d3e-4b5a-4c6d-8e7f-0a1b2c3d4e5f",
@@ -499,50 +538,35 @@ describe("app checkout (PurchaseController)", () => {
   })
 
   it("refuses signed-out users, unknown products and bad bodies before calling Paddle", async () => {
-    const forwarder = await startForwarder({ authenticateAppUser })
+    const forwarder = await startForwarder(APP)
+    const post = (body: unknown, token?: string) => postAppCheckout(forwarder.url, body, token)
+    assert.equal((await post({ product_id: "pro_monthly" }, "bad")).status, 401)
+    assert.equal((await post({ product_id: "nope" })).status, 404)
+    assert.equal((await post("{")).status, 400)
+    assert.equal((await post({ product_id: " pro_monthly" })).status, 400)
     assert.equal(
-      (await postAppCheckout(forwarder.url, { product_id: "pro_monthly" }, "bad")).status,
-      401
-    )
-    assert.equal((await postAppCheckout(forwarder.url, { product_id: "nope" })).status, 404)
-    assert.equal((await postAppCheckout(forwarder.url, "{")).status, 400)
-    assert.equal((await postAppCheckout(forwarder.url, { product_id: " pro_monthly" })).status, 400)
-    assert.equal(
-      (
-        await postAppCheckout(forwarder.url, {
-          product_id: "pro_monthly",
-          custom_transaction_id: "null",
-        })
-      ).status,
+      (await post({ product_id: "pro_monthly", custom_transaction_id: "null" })).status,
       400
     )
     assert.equal(upstream.length, 0)
     forwarder.close()
   })
 
-  it("sends the buyer back to APP_RETURN_URL, but prefers Superwall's signed links", async () => {
-    const forwarder = await startForwarder({ appReturnUrl: "myapp://paddle-checkout" })
-    const html = await (await fetch(`${forwarder.url}/paddle/pay?_ptxn=txn_x`)).text()
-    const config = JSON.parse(/const config = (.*);\n/.exec(html)![1]!)
-    assert.equal(
-      config.completedUrl,
-      "myapp://paddle-checkout?status=completed&transaction_id=txn_x"
-    )
-    assert.equal(config.closedUrl, "myapp://paddle-checkout?status=closed&transaction_id=txn_x")
-
-    const checkout = (await (
-      await postCheckout(forwarder.url, JSON.stringify(checkoutCreate()))
-    ).json()) as {
-      url: string
+  it("refuses an APP_RETURN_URL a browser would run instead of opening the app", () => {
+    const env = {
+      PADDLE_API_KEY: "pdl_sdbx_apikey_x",
+      PADDLE_CLIENT_TOKEN: "test_x",
+      PADDLE_WEBHOOK_SECRET: "pdl_ntfset_x",
+      PADDLE_PRODUCTS: "{}",
+      DRY_RUN: "1",
     }
-    const signed = await (
-      await fetch(`${forwarder.url}/paddle/pay${new URL(checkout.url).search}`)
-    ).text()
+    for (const bad of ["javascript:alert(1)", "data:text/html,x", "paddle-checkout"]) {
+      assert.throws(() => configFromEnv({ ...env, APP_RETURN_URL: bad }), /APP_RETURN_URL/)
+    }
     assert.equal(
-      JSON.parse(/const config = (.*);\n/.exec(signed)![1]!).completedUrl,
-      `${RETURN}&status=completed`
+      configFromEnv({ ...env, APP_RETURN_URL: "https://example.com/paddle-return" }).appReturnUrl,
+      "https://example.com/paddle-return"
     )
-    forwarder.close()
   })
 
   it("answers 404 on the checkout endpoint when the store has none", async () => {

@@ -76,8 +76,10 @@ npm start   # listens on :8788
 ```
 
 Both checkout settings are optional, and both can be set. Without `SUPERWALL_CHECKOUT_SECRET`,
-`POST /paddle/checkout` answers 404; a `SUPERWALL_CHECKOUT_SECRET` that is not a `whsec_` secret
-stops the server at startup.
+`POST /paddle/checkout` answers 404; without `APP_RETURN_URL`, `POST /paddle/app-checkout` answers
+501. A `SUPERWALL_CHECKOUT_SECRET` that is not a `whsec_` secret, or an `APP_RETURN_URL` that is not
+an absolute URL or uses a scheme a browser runs itself (`javascript:`, `data:`, ...), stops the
+server at startup.
 
 **The environment comes from the keys.** A sandbox API key (`pdl_sdbx_...`) and client token
 (`test_...`) select `https://sandbox-api.paddle.com`, open Paddle.js in sandbox and send
@@ -103,18 +105,22 @@ An app that sells custom store products with a `PurchaseController` starts the c
    `StoreProduct.customTransactionId` (it links the revenue to the paywall).
 2. The server authenticates the user with `authenticateAppUser` (`app-auth.ts`), creates a Paddle
    transaction for the product's price with `custom_data: {superwall_app_user_id, ...}`, and
-   answers `{"url": "<checkout.url>", "transaction_id": "txn_..."}`.
+   answers `{"url": "<checkout.url>&sw_return=...&sw_sig=...", "transaction_id": "txn_..."}`:
+   Paddle's checkout URL with the return links to `APP_RETURN_URL`, signed like the checkout
+   endpoint's.
 3. The app opens `url` in an `ASWebAuthenticationSession` (or a Custom Tab on Android). The pay
    page opens Paddle's overlay; on `checkout.completed` it goes to
    `APP_RETURN_URL?status=completed&transaction_id=txn_...`, on `checkout.closed` to
    `...?status=closed&...`, which ends the session.
 4. The webhooks report the purchase to Superwall as usual. The app sets
    `Superwall.shared.subscriptionStatus` from its own record of the user's access (a
-   `PurchaseController` owns the status).
+   `PurchaseController` owns the status). The buyer can be back in the app before Paddle's webhook
+   has arrived, so don't treat a status that is not active yet as a failed purchase.
 
 `authenticateAppUser` must return the id your app passes to `Superwall.shared.identify(userId:)`,
 from a credential your server verifies. The user id is never read from the request body: anyone
-could then buy access for another user. Until you implement it the route answers 501; a request
+could then buy access for another user. Until you implement it, or without `APP_RETURN_URL`, the
+route answers 501; a request
 without a valid credential gets 401, an unknown product 404, a bad body 400, and a Paddle failure
 502.
 
@@ -123,8 +129,10 @@ without a valid credential gets 401, an unknown product 404, a bad body 400, and
 When a paywall sells one of the store's products, Superwall POSTs a `checkout.create` to the
 checkout endpoint and opens the URL it answers with in the paywall's checkout destination (Safari
 by default). Paddle's overlay takes the payment; its `checkout.completed` sends the buyer to
-Superwall's return page, which opens the app again, and the paywall finishes the purchase once the
-return page reports it. Access arrives with the webhook's `initial_purchase`.
+Superwall's return page, which opens the app again. The paywall finishes the purchase once
+Superwall has the webhook's `initial_purchase` **carrying the checkout's
+`custom_transaction_id`**, which the server copies from the transaction's `custom_data`. An event
+without it still grants access, but the paywall keeps waiting.
 
 - `POST /paddle/checkout` is the checkout endpoint. The request is signed the
   [Standard Webhooks](https://www.standardwebhooks.com) way: `webhook-signature` lists
@@ -147,9 +155,9 @@ return page reports it. Access arrives with the webhook's `initial_purchase`.
   It creates a Paddle transaction (`POST /transactions`) for the product's price with
   `custom_data: {superwall_app_user_id, superwall_custom_transaction_id}` and answers
   `{"url": "<checkout.url>&sw_return=...&sw_sig=..."}`: Paddle's `checkout.url` (the default
-  payment link plus `?_ptxn=txn_...`) with the two return links, signed with the same secret together
-  with the `_ptxn` transaction, so the pay page only ever redirects where Superwall said to for that
-  transaction. `401` for a missing, wrong or stale
+  payment link plus `?_ptxn=txn_...`) with the two return links, signed (with a key derived from
+  `PADDLE_WEBHOOK_SECRET`) together with the `_ptxn` transaction, so the pay page only ever redirects
+  where Superwall said to for that transaction. `401` for a missing, wrong or stale
   signature, `400` for an invalid body (ids must be non-empty, at most 255 characters, without
   surrounding whitespace, and not a placeholder such as `null`: Superwall refuses such ids), `404`
   for a product no price maps to, `502` when Paddle refuses or returns no `checkout.url` (no
@@ -157,8 +165,8 @@ return page reports it. Access arrives with the webhook's `initial_purchase`.
 - `GET /paddle/pay?_ptxn=txn_...` is the default payment link page. It loads Paddle.js v2, calls
   `Paddle.Environment.set("sandbox")` in sandbox and `Paddle.Initialize({ token, eventCallback })`;
   Paddle.js then opens the overlay checkout for the `_ptxn` transaction by itself. On
-  `checkout.completed` it goes to the signed `success_url`, on `checkout.closed` to the
-  `cancel_url`. Paddle also opens the payment link for its own flows (a card update, for one);
+  `checkout.completed` it goes to the signed completed link (`success_url`, or `APP_RETURN_URL` for an
+  app checkout), on `checkout.closed` to the closed one. Paddle also opens the payment link for its own flows (a card update, for one);
   without signed return links the page just says it is done. Every injected value is HTML-escaped
   or embedded as script-safe JSON.
 - `GET /health` answers `200`.

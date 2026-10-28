@@ -12,6 +12,7 @@ import {
   renderPayPage,
   verifySuperwallRequest,
   withReturnLinks,
+  returnLinkKey,
 } from "./checkout.ts"
 import {
   eventIdFor,
@@ -725,28 +726,31 @@ describe("checkout helpers", () => {
     assert.equal(priceIdFor({ pri_a: "pro_monthly" }, "missing"), undefined)
   })
 
+  const LINK_KEY = returnLinkKey("pdl_ntfset_01k6000000000000000000000_testsecret")
+
   it("signs the return links into the pay page URL and reads back only its own", () => {
     const links = { completed: request.success_url, closed: request.cancel_url }
     const url = new URL(
-      withReturnLinks("https://f.example.com/paddle/pay?_ptxn=txn_1", links, SECRET)
+      withReturnLinks("https://f.example.com/paddle/pay?_ptxn=txn_1", links, LINK_KEY)
     )
     assert.equal(url.searchParams.get("_ptxn"), "txn_1")
-    assert.deepEqual(readReturnLinks(url.searchParams, SECRET), links)
+    assert.deepEqual(readReturnLinks(url.searchParams, LINK_KEY), links)
     url.searchParams.set(
       "sw_return",
       Buffer.from('{"completed":"https://evil","closed":"x"}').toString("base64url")
     )
-    assert.equal(readReturnLinks(url.searchParams, SECRET), undefined)
-    assert.equal(readReturnLinks(new URLSearchParams("_ptxn=txn_1"), SECRET), undefined)
+    assert.equal(readReturnLinks(url.searchParams, LINK_KEY), undefined)
+    assert.equal(readReturnLinks(new URLSearchParams("_ptxn=txn_1"), LINK_KEY), undefined)
   })
 
-  it("does not accept one transaction's return links on another's pay page", () => {
+  it("does not accept one transaction's return links on another's pay page, or another key's", () => {
     const links = { completed: request.success_url, closed: request.cancel_url }
     const url = new URL(
-      withReturnLinks("https://f.example.com/paddle/pay?_ptxn=txn_1", links, SECRET)
+      withReturnLinks("https://f.example.com/paddle/pay?_ptxn=txn_1", links, LINK_KEY)
     )
+    assert.equal(readReturnLinks(url.searchParams, returnLinkKey("pdl_ntfset_other")), undefined)
     url.searchParams.set("_ptxn", "txn_2")
-    assert.equal(readReturnLinks(url.searchParams, SECRET), undefined)
+    assert.equal(readReturnLinks(url.searchParams, LINK_KEY), undefined)
   })
 
   it("accepts only a whsec_ secret with a key", () => {

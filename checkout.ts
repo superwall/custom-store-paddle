@@ -118,38 +118,38 @@ export const priceIdFor = (
 /** Where the pay page sends the buyer: Superwall's return page for this checkout. */
 export type ReturnLinks = { readonly completed: string; readonly closed: string }
 
+/**
+ * The key the pay page's return links are signed with, derived from the Paddle webhook secret:
+ * a secret only this server holds, which every configuration has.
+ */
+export const returnLinkKey = (webhookSecret: string): Buffer =>
+  createHmac("sha256", webhookSecret).update("superwall-pay-return-links").digest()
+
 // Covers the transaction too, so a checkout's links cannot be replayed onto another
 // transaction's pay page.
-const linkSignature = (transactionId: string, encoded: string, secret: string) =>
-  createHmac("sha256", secretKey(secret))
-    .update(`pay-return.${transactionId}.${encoded}`)
-    .digest("base64url")
+const linkSignature = (transactionId: string, encoded: string, key: Buffer) =>
+  createHmac("sha256", key).update(`pay-return.${transactionId}.${encoded}`).digest("base64url")
 
 /**
  * Adds the return links to Paddle's checkout URL (which carries the transaction as `_ptxn`),
- * signed so the pay page only ever redirects where Superwall said to for that transaction (an
- * unsigned parameter would make it an open redirect).
+ * signed so the pay page only ever redirects where this server said to for that transaction
+ * (an unsigned parameter would make it an open redirect). A pay page Paddle opens on its own,
+ * such as a card update, has no links and sends nobody anywhere.
  */
-export const withReturnLinks = (checkoutUrl: string, links: ReturnLinks, secret: string) => {
+export const withReturnLinks = (checkoutUrl: string, links: ReturnLinks, key: Buffer) => {
   const url = new URL(checkoutUrl)
   const encoded = Buffer.from(JSON.stringify(links)).toString("base64url")
   url.searchParams.set("sw_return", encoded)
-  url.searchParams.set(
-    "sw_sig",
-    linkSignature(url.searchParams.get("_ptxn") ?? "", encoded, secret)
-  )
+  url.searchParams.set("sw_sig", linkSignature(url.searchParams.get("_ptxn") ?? "", encoded, key))
   return url.toString()
 }
 
 /** The return links of a pay page URL, or `undefined` when absent or not signed by us. */
-export const readReturnLinks = (
-  query: URLSearchParams,
-  secret: string
-): ReturnLinks | undefined => {
+export const readReturnLinks = (query: URLSearchParams, key: Buffer): ReturnLinks | undefined => {
   const encoded = query.get("sw_return")
   const signature = query.get("sw_sig")
   if (!encoded || !signature) return undefined
-  const expected = Buffer.from(linkSignature(query.get("_ptxn") ?? "", encoded, secret))
+  const expected = Buffer.from(linkSignature(query.get("_ptxn") ?? "", encoded, key))
   const actual = Buffer.from(signature)
   if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return undefined
   try {
@@ -165,8 +165,7 @@ export const readReturnLinks = (
 /**
  * Where the pay page sends a buyer whose checkout your app started (`POST /paddle/app-checkout`,
  * for a PurchaseController): your app's `APP_RETURN_URL` with the outcome and transaction, for
- * example `myapp://paddle-checkout?status=completed&transaction_id=txn_...`. It is your own
- * configured URL, so it needs no signature.
+ * example `myapp://paddle-checkout?status=completed&transaction_id=txn_...`.
  */
 export const appReturnLinks = (appReturnUrl: string, transactionId: string): ReturnLinks => {
   const link = (status: "completed" | "closed") => {
